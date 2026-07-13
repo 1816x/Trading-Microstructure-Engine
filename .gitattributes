@@ -1,0 +1,6 @@
+# Lockfiles and generated artifacts: keep them out of language statistics
+Cargo.lock linguist-vendored
+package-lock.json linguist-vendored
+pnpm-lock.yaml linguist-vendored
+yarn.lock linguist-vendored
+uv.lock linguist-vendored
