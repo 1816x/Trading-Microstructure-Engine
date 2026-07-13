@@ -34,7 +34,7 @@ data-feed → [Rust: microstructure engine] → metrics (order-flow imbalance, r
 Early scaffolding. Roadmap:
 
 - [x] Phase 0 — Scaffolding: monorepo layout, linters, CI.
-- [ ] Phase 1 — Vertical slice: sample tick CSV → order-flow imbalance → SQLite → API endpoint.
+- [x] Phase 1 — Vertical slice: sample tick CSV → order-flow imbalance → SQLite → API endpoint.
 - [ ] Phase 2 — More metrics (realized volatility, volume), tests against known data.
 - [ ] Phase 3 — Trade journal model + Claude API behavioral agent.
 - [ ] Phase 4 — Next.js dashboard.
@@ -42,8 +42,31 @@ Early scaffolding. Roadmap:
 
 ## Running locally
 
-Coming with Phase 1 — the vertical slice will be runnable end-to-end with the bundled
-sample data (synthetic, never real trades or amounts).
+Requires Rust (stable) and Python ≥ 3.11. All bundled data is synthetic — never real
+trades or amounts.
+
+```bash
+# 1. (Optional) regenerate the sample tape — deterministic, seeded
+python3 data/generate_ticks.py
+
+# 2. Compute order-flow imbalance per 1s window into metrics.db
+cargo run --manifest-path engine/Cargo.toml --release -- \
+  --input data/sample_mnq_ticks.csv --db metrics.db --window 1s
+
+# 3. Serve the metrics
+python3 -m venv .venv && .venv/bin/pip install -e "backtest[dev]"
+METRICS_DB=metrics.db .venv/bin/uvicorn backtest.api:app
+
+# 4. Query them
+curl 'localhost:8000/metrics/ofi?limit=5'
+```
+
+Run the checks the same way CI does:
+
+```bash
+cd engine && cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test
+cd backtest && ruff check . && ruff format --check . && pytest
+```
 
 ## Design decisions
 
@@ -57,3 +80,18 @@ calls were made by me — as the project progresses.
 - **Dashboard scaffold deferred to Phase 4** (Claude's proposal, accepted): running
   `create-next-app` during scaffolding would bury the early history under thousands of
   generated lines; a placeholder folder keeps Phase 0 reviewable.
+- **Order-flow imbalance first** (mine): of the planned metrics it is the one that most
+  depends on true tick data (aggressor side per trade) instead of OHLC candles, so it
+  proves the pipeline earns its keep before anything else gets built.
+- **OFI defined as `(buy − sell) / (buy + sell)` per epoch-aligned window** (Claude's
+  proposal, accepted): the normalized form is bounded in `[-1, 1]`, which makes windows
+  comparable across volume regimes. Buckets accumulate in an ordered map so an
+  out-of-order tape still produces sorted output.
+- **FastAPI serves the metric in Phase 1** (Claude's proposal, accepted): the endpoint
+  belongs to the Python layer that will own backtesting and aggregation anyway; giving
+  the Rust engine an HTTP server would couple the hot path to serving concerns.
+- **Synthetic tape with a drifting buy-pressure regime** (Claude's proposal, corrected
+  by me): a naive uniform-random tape makes OFI hover near zero everywhere, which hides
+  bugs — sign errors produce equally plausible noise. The generator drifts its
+  buy-pressure between 0.35 and 0.65 so imbalance windows show persistent, verifiable
+  signal.
