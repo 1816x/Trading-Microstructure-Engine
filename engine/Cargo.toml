@@ -4,7 +4,11 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
 csv = "1"
+# bundled: compile SQLite in, so the binary doesn't depend on a system lib
+rusqlite = { version = "0.37", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }
 
 [lints.clippy]
@@ -16,4 +20,6 @@ cast_precision_loss = "allow"
 cast_possible_truncation = "allow"
 cast_sign_loss = "allow"
 module_name_repetitions = "allow"
+# buy/sell pairs are the domain vocabulary; the similarity is the point
+similar_names = "allow"
 missing_errors_doc = "allow"
