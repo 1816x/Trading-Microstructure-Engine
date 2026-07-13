@@ -15,7 +15,9 @@ import random
 
 TICK_SIZE = 0.25  # MNQ minimum price increment
 START_PRICE = 21_400.00
-START_TIMESTAMP_NS = 1_760_000_000_000_000_000  # arbitrary fixed epoch, keeps output stable
+START_TIMESTAMP_NS = (
+    1_760_000_000_000_000_000  # arbitrary fixed epoch, keeps output stable
+)
 MEAN_INTERARRIVAL_NS = 100_000_000  # ~10 trades/second on average
 
 
@@ -55,7 +57,9 @@ def main() -> None:
 
     rows = generate(args.ticks, args.seed)
     with open(args.out, "w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=["timestamp_ns", "price", "size", "aggressor"])
+        writer = csv.DictWriter(
+            f, fieldnames=["timestamp_ns", "price", "size", "aggressor"]
+        )
         writer.writeheader()
         writer.writerows(rows)
     print(f"wrote {len(rows)} ticks to {args.out}")
