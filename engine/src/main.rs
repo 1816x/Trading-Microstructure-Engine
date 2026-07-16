@@ -1,4 +1,4 @@
-mod ofi;
+mod metrics;
 mod storage;
 mod tick;
 
@@ -28,14 +28,14 @@ fn main() -> anyhow::Result<()> {
 
     let ticks = tick::read_csv(&args.input)
         .with_context(|| format!("reading ticks from {}", args.input.display()))?;
-    let buckets = ofi::compute(&ticks, window_ns);
+    let buckets = metrics::compute(&ticks, window_ns);
 
     let mut conn = rusqlite::Connection::open(&args.db)
         .with_context(|| format!("opening database {}", args.db.display()))?;
-    storage::write_ofi(&mut conn, window_ns, &buckets)?;
+    storage::write_metrics(&mut conn, window_ns, &buckets)?;
 
     println!(
-        "{} ticks -> {} OFI buckets (window {}) -> {}",
+        "{} ticks -> {} metric buckets (window {}) -> {}",
         ticks.len(),
         buckets.len(),
         args.window,
