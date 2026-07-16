@@ -21,9 +21,12 @@ def _db_path() -> Path:
     return Path(os.environ.get(DB_PATH_ENV, "metrics.db"))
 
 
-@app.get("/metrics/ofi")
-def get_ofi(limit: int = Query(default=100, ge=1, le=10_000)) -> list[dict[str, Any]]:
-    """Return the most recent OFI buckets, newest first."""
+def _query_metrics(columns: str, limit: int) -> list[dict[str, Any]]:
+    """Return `columns` from the newest metric buckets, newest first.
+
+    Shared by every endpoint: they differ only in which columns they project
+    out of the single `metrics` table the engine writes.
+    """
     path = _db_path()
     if not path.exists():
         raise HTTPException(
@@ -34,13 +37,33 @@ def get_ofi(limit: int = Query(default=100, ge=1, le=10_000)) -> list[dict[str, 
         conn.row_factory = sqlite3.Row
         try:
             rows = conn.execute(
-                "SELECT bucket_start_ns, window_ns, buy_volume, sell_volume, ofi"
-                " FROM ofi ORDER BY bucket_start_ns DESC LIMIT ?",
+                f"SELECT {columns} FROM metrics ORDER BY bucket_start_ns DESC LIMIT ?",
                 (limit,),
             ).fetchall()
         except sqlite3.OperationalError as exc:
             raise HTTPException(
                 status_code=503,
-                detail=f"metrics database at '{path}' has no OFI data yet: {exc}",
+                detail=f"metrics database at '{path}' has no metrics yet: {exc}",
             ) from exc
     return [dict(row) for row in rows]
+
+
+@app.get("/metrics/ofi")
+def get_ofi(limit: int = Query(default=100, ge=1, le=10_000)) -> list[dict[str, Any]]:
+    """Return the most recent order-flow-imbalance buckets, newest first."""
+    return _query_metrics("bucket_start_ns, window_ns, buy_volume, sell_volume, ofi", limit)
+
+
+@app.get("/metrics/volatility")
+def get_volatility(limit: int = Query(default=100, ge=1, le=10_000)) -> list[dict[str, Any]]:
+    """Return the most recent realized-volatility buckets, newest first."""
+    return _query_metrics("bucket_start_ns, window_ns, realized_volatility, trade_count", limit)
+
+
+@app.get("/metrics/volume")
+def get_volume(limit: int = Query(default=100, ge=1, le=10_000)) -> list[dict[str, Any]]:
+    """Return the most recent volume buckets (with VWAP), newest first."""
+    return _query_metrics(
+        "bucket_start_ns, window_ns, buy_volume, sell_volume, total_volume, vwap, trade_count",
+        limit,
+    )
