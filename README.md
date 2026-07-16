@@ -35,7 +35,7 @@ Early scaffolding. Roadmap:
 
 - [x] Phase 0 — Scaffolding: monorepo layout, linters, CI.
 - [x] Phase 1 — Vertical slice: sample tick CSV → order-flow imbalance → SQLite → API endpoint.
-- [ ] Phase 2 — More metrics (realized volatility, volume), tests against known data.
+- [x] Phase 2 — More metrics (realized volatility, volume, VWAP), tests against known data.
 - [ ] Phase 3 — Trade journal model + Claude API behavioral agent.
 - [ ] Phase 4 — Next.js dashboard.
 - [ ] Phase 5 — v0.1.0 release with sample-data demo.
@@ -49,7 +49,7 @@ trades or amounts.
 # 1. (Optional) regenerate the sample tape — deterministic, seeded
 python3 data/generate_ticks.py
 
-# 2. Compute order-flow imbalance per 1s window into metrics.db
+# 2. Compute microstructure metrics per 1s window into metrics.db
 cargo run --manifest-path engine/Cargo.toml --release -- \
   --input data/sample_mnq_ticks.csv --db metrics.db --window 1s
 
@@ -57,8 +57,10 @@ cargo run --manifest-path engine/Cargo.toml --release -- \
 python3 -m venv .venv && .venv/bin/pip install -e "backtest[dev]"
 METRICS_DB=metrics.db .venv/bin/uvicorn backtest.api:app
 
-# 4. Query them
-curl 'localhost:8000/metrics/ofi?limit=5'
+# 4. Query them — one table, three views
+curl 'localhost:8000/metrics/ofi?limit=5'         # order-flow imbalance
+curl 'localhost:8000/metrics/volatility?limit=5'  # realized volatility + trade count
+curl 'localhost:8000/metrics/volume?limit=5'      # buy/sell/total volume + VWAP
 ```
 
 Run the checks the same way CI does:
@@ -95,3 +97,18 @@ calls were made by me — as the project progresses.
   bugs — sign errors produce equally plausible noise. The generator drifts its
   buy-pressure between 0.35 and 0.65 so imbalance windows show persistent, verifiable
   signal.
+- **One unified `metrics` table instead of a table per metric** (Phase 2, Claude's
+  proposal, accepted): every metric shares the same `(bucket_start_ns, window_ns)` key
+  and is produced in a single windowing pass, so a wide row is the natural shape. The
+  Python API projects the columns each endpoint needs (`/metrics/ofi`,
+  `/metrics/volatility`, `/metrics/volume`) out of that one table; the Phase 1
+  `/metrics/ofi` contract is unchanged.
+- **Realized volatility is continuous across window boundaries** (Phase 2, mine): a
+  window's realized variance includes the log return from the previous window's last
+  trade, so summing per-window variances recovers the whole tape's realized variance and
+  a window with a single tick still carries the volatility of its move. The alternative —
+  resetting returns at each window edge — silently discards the boundary moves and
+  understates volatility.
+- **VWAP folded into the same pass** (Phase 2, Claude's proposal, accepted): it needs
+  only the running `Σ price·size` the engine already touches per tick, so it comes almost
+  for free and gives the dashboard a price anchor alongside the volume figures.
