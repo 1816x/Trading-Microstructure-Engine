@@ -170,3 +170,87 @@ def test_analyze_without_api_key_returns_503(client, monkeypatch):
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     api.app.dependency_overrides.clear()
     assert client.post("/journal/analyze").status_code == 503
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        {"side": "sideways"},
+        {"size": 0},
+        {"symbol": ""},
+        {"entry_price": 0},
+        {"entered_at_ns": 0},
+        {"entered_at_ns": 2_000, "exited_at_ns": 1_000},  # exit before entry
+    ],
+)
+def test_create_journal_entry_validation(client, bad):
+    body = {
+        "symbol": "MNQ",
+        "side": "long",
+        "entered_at_ns": 1_500_000_000,
+        "entry_price": 21_400.0,
+        "size": 1,
+    }
+    body.update(bad)
+    assert client.post("/journal", json=body).status_code == 422
+
+
+def test_get_journal_entry_by_id(client):
+    created = _post_entry(client, entered_at_ns=1_500_000_000).json()
+    got = client.get(f"/journal/{created['id']}").json()
+    assert got["id"] == created["id"]
+    assert got["regime_ofi"] == 0.5
+
+
+def test_get_journal_entry_404(client):
+    assert client.get("/journal/999").status_code == 404
+
+
+def test_patch_journal_entry(client):
+    created = _post_entry(client).json()
+    response = client.patch(f"/journal/{created['id']}", json={"size": 4, "emotion": "calm"})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["size"] == 4
+    assert body["emotion"] == "calm"
+
+
+def test_patch_journal_entry_404(client):
+    assert client.patch("/journal/999", json={"size": 2}).status_code == 404
+
+
+def test_patch_journal_entry_empty_returns_422(client):
+    created = _post_entry(client).json()
+    assert client.patch(f"/journal/{created['id']}", json={}).status_code == 422
+
+
+def test_patch_journal_entry_invalid_returns_422(client):
+    created = _post_entry(client).json()
+    assert client.patch(f"/journal/{created['id']}", json={"side": "up"}).status_code == 422
+
+
+def test_delete_journal_entry(client):
+    created = _post_entry(client).json()
+    assert client.delete(f"/journal/{created['id']}").status_code == 204
+    assert client.get(f"/journal/{created['id']}").status_code == 404
+
+
+def test_delete_journal_entry_404(client):
+    assert client.delete("/journal/999").status_code == 404
+
+
+def test_get_journal_time_range(client):
+    _post_entry(client, entered_at_ns=1_500_000_000)
+    _post_entry(client, entered_at_ns=2_500_000_000)
+    rows = client.get("/journal", params={"since_ns": 2_000_000_000}).json()
+    assert [r["entered_at_ns"] for r in rows] == [2_500_000_000]
+
+
+def test_analyze_journal_502_when_no_structured_output(client):
+    _post_entry(client)
+    api.app.dependency_overrides[api.get_anthropic_client] = lambda: _FakeClient(None)
+    try:
+        response = client.post("/journal/analyze")
+    finally:
+        api.app.dependency_overrides.clear()
+    assert response.status_code == 502

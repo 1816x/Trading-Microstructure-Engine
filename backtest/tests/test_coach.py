@@ -1,25 +1,29 @@
+import pytest
+
 from backtest import coach
 from backtest.coach import BehavioralAnalysis, BehavioralObservation
 
 
 class _FakeMessages:
-    def __init__(self, parsed_output):
+    def __init__(self, parsed_output, stop_reason="end_turn"):
         self._parsed_output = parsed_output
+        self._stop_reason = stop_reason
         self.calls = []
 
     def parse(self, **kwargs):
         self.calls.append(kwargs)
-        return _FakeResponse(self._parsed_output)
+        return _FakeResponse(self._parsed_output, self._stop_reason)
 
 
 class _FakeResponse:
-    def __init__(self, parsed_output):
+    def __init__(self, parsed_output, stop_reason="end_turn"):
         self.parsed_output = parsed_output
+        self.stop_reason = stop_reason
 
 
 class FakeClient:
-    def __init__(self, parsed_output):
-        self.messages = _FakeMessages(parsed_output)
+    def __init__(self, parsed_output, stop_reason="end_turn"):
+        self.messages = _FakeMessages(parsed_output, stop_reason)
 
 
 def _canned() -> BehavioralAnalysis:
@@ -81,6 +85,12 @@ def test_analyze_empty_journal_short_circuits():
     assert result.observations == []
     assert result.disclaimer == coach.DISCLAIMER
     assert client.messages.calls == []  # no API call for an empty journal
+
+
+def test_analyze_raises_when_no_structured_output():
+    client = FakeClient(None, stop_reason="refusal")
+    with pytest.raises(coach.AnalysisUnavailable, match="refusal"):
+        coach.analyze([_enriched()], client=client)
 
 
 def test_build_messages_includes_regime_and_notes():

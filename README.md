@@ -81,15 +81,31 @@ python3 -m backtest.coach --load data/sample_journal.csv --db metrics.db
 curl -X POST localhost:8000/journal -H 'content-type: application/json' \
   -d '{"symbol":"MNQ","side":"long","entered_at_ns":1760000030000000000,
        "entry_price":21400,"size":1,"notes":"followed my plan","emotion":"calm"}'
-curl 'localhost:8000/journal?limit=5'             # entries joined to the market regime
-curl -X POST 'localhost:8000/journal/analyze'     # Claude behavioral analysis (503 without a key)
+curl 'localhost:8000/journal?limit=5'                 # entries joined to the market regime
+curl 'localhost:8000/journal?since_ns=...&until_ns=...' # bound by entry time (since incl., until excl.)
+curl 'localhost:8000/journal/1'                       # one entry by id (404 if absent)
+curl -X PATCH localhost:8000/journal/1 -H 'content-type: application/json' \
+  -d '{"emotion":"disciplined"}'                       # partial update
+curl -X DELETE 'localhost:8000/journal/1'             # 204 on success, 404 if absent
+curl -X POST 'localhost:8000/journal/analyze'         # Claude behavioral analysis (503 without a key)
 ```
+
+`side` must be `long`/`short`, `size`/`entry_price`/`entered_at_ns` must be positive, and
+`exited_at_ns` (if given) must be ≥ `entered_at_ns` — invalid bodies return 422. If Claude
+declines or returns no structured analysis, `/journal/analyze` returns 502.
 
 Run the checks the same way CI does:
 
 ```bash
 cd engine && cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test
 cd backtest && ruff check . && ruff format --check . && pytest
+```
+
+Verify the whole Phase 1–3 pipeline end to end (tape → engine → metrics → journal → regime
+join; no API key needed):
+
+```bash
+bash scripts/verify_pipeline.sh
 ```
 
 ## Design decisions
@@ -147,3 +163,17 @@ calls were made by me — as the project progresses.
   design **not** trading advice and **not** price predictions. The Anthropic client is
   dependency-injected, so the analysis is unit-tested against a mock and CI needs neither
   a key nor network access.
+- **Phase 3 polish: validation, CRUD, refusal handling, time filters** (Phase 3, mine):
+  journal entries are validated at the API boundary (`side` ∈ `long`/`short`, positive
+  size/price/timestamps, `exited_at_ns` ≥ `entered_at_ns`) → 422 on bad input. The journal
+  is a full resource (`GET`/`PATCH`/`DELETE /journal/{id}`) with `since_ns`/`until_ns`
+  filters for scoping analysis to a session. Because `messages.parse().parsed_output` is
+  `Optional` (it is `None` on a safety refusal or an empty structured parse), the agent
+  raises `AnalysisUnavailable` and the endpoint maps it to a 502 rather than surfacing a
+  bare `null`. `scripts/verify_pipeline.sh` exercises the whole tape → engine → journal →
+  regime-join chain without an API key.
+- **Nanosecond timestamps deferred as a Phase 4 JSON concern** (Phase 3, mine): the API
+  returns every `*_ns` field as a JSON integer, and these epochs (~1.76e18) exceed
+  JavaScript's safe-integer range (2^53 ≈ 9e15). Rather than change the Phase 1–2 metrics
+  contract now, the Phase 4 dashboard will read them as strings/BigInt; documented in the
+  `backtest.api` module docstring so it is not forgotten.
