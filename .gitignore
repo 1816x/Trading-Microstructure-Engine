@@ -18,6 +18,9 @@ out/
 *.db
 *.sqlite3
 
+# Secrets (Claude API key etc.)
+.env
+
 # Editor / OS
 .vscode/
 .idea/

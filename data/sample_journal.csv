@@ -1,0 +1,13 @@
+symbol,side,entered_at_ns,exited_at_ns,entry_price,exit_price,size,pnl,notes,emotion
+MNQ,long,1760000030647892279,1760000035443634567,21400.00,21405.00,1,10.00,Waited for the pullback and followed my plan.,calm
+MNQ,long,1760000064606078771,1760000068907674462,21402.50,21407.50,1,10.00,"Clean continuation setup, sized normally.",calm
+MNQ,long,1760000094544070773,1760000103018457962,21406.00,21402.00,1,-8.00,Stopped out at my level. Part of the game.,disciplined
+MNQ,long,1760000120161042648,1760000136908438578,21403.00,21399.50,3,-21.00,Jumped right back in bigger to win it back.,frustrated
+MNQ,long,1760000150300026767,1760000169869505384,21400.50,21396.00,5,-45.00,"Doubled down again, angry about the last two.",angry
+MNQ,short,1760000181823296038,1760000187893674959,21398.00,21401.00,3,-18.00,Chased the breakdown well after it started.,fomo
+MNQ,long,1760000211703729684,1760000222191680736,21401.00,21402.00,1,2.00,"Hesitated, finally entered late in choppy tape.",anxious
+MNQ,long,1760000244495038384,1760000254477099643,21404.00,21410.00,2,24.00,"Reset, waited, took the A+ setup.",calm
+MNQ,short,1760000271243862422,1760000291043302458,21409.00,21402.00,6,84.00,"Felt unstoppable after that win, went big.",euphoric
+MNQ,short,1760000304800881088,1760000307577094987,21403.50,21407.50,6,-48.00,Kept the size huge and gave most of it back.,careless
+MNQ,long,1760000332744112455,1760000336343547722,21408.00,21405.50,3,-15.00,Everyone was talking about it so I jumped in.,fomo
+MNQ,long,1760000364564643895,1760000384000498155,21405.00,21409.50,1,9.00,"Back to my process, small and patient.",calm

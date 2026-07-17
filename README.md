@@ -36,7 +36,7 @@ Early scaffolding. Roadmap:
 - [x] Phase 0 — Scaffolding: monorepo layout, linters, CI.
 - [x] Phase 1 — Vertical slice: sample tick CSV → order-flow imbalance → SQLite → API endpoint.
 - [x] Phase 2 — More metrics (realized volatility, volume, VWAP), tests against known data.
-- [ ] Phase 3 — Trade journal model + Claude API behavioral agent.
+- [x] Phase 3 — Trade journal model + Claude API behavioral agent.
 - [ ] Phase 4 — Next.js dashboard.
 - [ ] Phase 5 — v0.1.0 release with sample-data demo.
 
@@ -61,6 +61,28 @@ METRICS_DB=metrics.db .venv/bin/uvicorn backtest.api:app
 curl 'localhost:8000/metrics/ofi?limit=5'         # order-flow imbalance
 curl 'localhost:8000/metrics/volatility?limit=5'  # realized volatility + trade count
 curl 'localhost:8000/metrics/volume?limit=5'      # buy/sell/total volume + VWAP
+```
+
+Phase 3 adds a trade journal (stored alongside the metrics) and a Claude-powered
+behavioral agent that reads it. The agent needs an Anthropic API key; it produces
+behavioral observations correlated with the market regime — **not** trading advice
+or price predictions.
+
+```bash
+# 5. Generate a synthetic trade journal (deterministic; all synthetic)
+python3 data/generate_journal.py                  # writes data/sample_journal.csv
+
+# 6. Analyze behavior with Claude (defaults to claude-opus-4-8;
+#    override with ANTHROPIC_MODEL). --load seeds the journal into the DB first.
+export ANTHROPIC_API_KEY=sk-ant-...
+python3 -m backtest.coach --load data/sample_journal.csv --db metrics.db
+
+# 7. Or drive the journal over the API (shares the same METRICS_DB)
+curl -X POST localhost:8000/journal -H 'content-type: application/json' \
+  -d '{"symbol":"MNQ","side":"long","entered_at_ns":1760000030000000000,
+       "entry_price":21400,"size":1,"notes":"followed my plan","emotion":"calm"}'
+curl 'localhost:8000/journal?limit=5'             # entries joined to the market regime
+curl -X POST 'localhost:8000/journal/analyze'     # Claude behavioral analysis (503 without a key)
 ```
 
 Run the checks the same way CI does:
@@ -112,3 +134,16 @@ calls were made by me — as the project progresses.
 - **VWAP folded into the same pass** (Phase 2, Claude's proposal, accepted): it needs
   only the running `Σ price·size` the engine already touches per tick, so it comes almost
   for free and gives the dashboard a price anchor alongside the volume figures.
+- **The trade journal is Python-owned and lives in the same database** (Phase 3, mine):
+  unlike `metrics`, the journal is written and read by the Python + agent layer, not the
+  Rust hot path, so Python owns the `journal_entries` schema — a deliberate inversion of
+  the Phase 1 "the engine owns the schema" rule. Keeping it in the same SQLite file lets
+  each entry join to the microstructure regime at its entry time (`GET /journal` and the
+  agent both use that join), which is the whole point of the feature. SQLite only, no ORM,
+  to stay consistent with the rest of the stack; Postgres in the diagram stays a future
+  option, not a Phase 3 dependency.
+- **Behavioral agent defaults to `claude-opus-4-8`** (Phase 3, mine): overridable via the
+  `ANTHROPIC_MODEL` env var. It emits behavioral observations tied to the regime — by
+  design **not** trading advice and **not** price predictions. The Anthropic client is
+  dependency-injected, so the analysis is unit-tested against a mock and CI needs neither
+  a key nor network access.
