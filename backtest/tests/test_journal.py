@@ -128,3 +128,92 @@ def test_import_csv(tmp_path):
     assert newest["notes"] is None
     assert oldest["entry_price"] == 21_400.0
     assert oldest["pnl"] == 10.0
+
+
+# --- CRUD by id ----------------------------------------------------------------
+
+
+def test_get_entry_enriched(db):
+    stored = journal.insert_entry(db, _entry(1_500))
+    _seed_metrics(db, [(1000, 1000, 30, 10, 40, 5, 0.5, 21_400.0, 0.001)])
+    got = journal.get_entry(db, stored["id"])
+    assert got["id"] == stored["id"]
+    assert got["regime_ofi"] == 0.5
+
+
+def test_get_entry_missing_returns_none(db):
+    journal.insert_entry(db, _entry(1000))
+    assert journal.get_entry(db, 999) is None
+
+
+def test_get_entry_missing_db_returns_none(tmp_path):
+    assert journal.get_entry(tmp_path / "nope.db", 1) is None
+
+
+def test_update_entry_partial(db):
+    stored = journal.insert_entry(db, _entry(1000, side="long"))
+    updated = journal.update_entry(db, stored["id"], {"size": 5, "emotion": "angry"})
+    assert updated["size"] == 5
+    assert updated["emotion"] == "angry"
+    assert updated["side"] == "long"  # untouched
+    assert journal.get_entry(db, stored["id"])["size"] == 5  # persisted
+
+
+def test_update_entry_ignores_protected_columns(db):
+    stored = journal.insert_entry(db, _entry(1000))
+    updated = journal.update_entry(db, stored["id"], {"id": 999, "created_at_ns": 0, "notes": "x"})
+    assert updated["id"] == stored["id"]
+    assert updated["created_at_ns"] == stored["created_at_ns"]
+    assert updated["notes"] == "x"
+
+
+def test_update_entry_missing_returns_none(db):
+    journal.insert_entry(db, _entry(1000))
+    assert journal.update_entry(db, 999, {"size": 3}) is None
+
+
+def test_update_entry_empty_is_noop(db):
+    stored = journal.insert_entry(db, _entry(1000))
+    same = journal.update_entry(db, stored["id"], {})
+    assert same["id"] == stored["id"]
+    assert same["size"] == stored["size"]
+
+
+def test_delete_entry(db):
+    stored = journal.insert_entry(db, _entry(1000))
+    assert journal.delete_entry(db, stored["id"]) is True
+    assert journal.get_entry(db, stored["id"]) is None
+    assert journal.delete_entry(db, stored["id"]) is False
+
+
+def test_delete_entry_missing_db(tmp_path):
+    assert journal.delete_entry(tmp_path / "nope.db", 1) is False
+
+
+# --- Time-range filters --------------------------------------------------------
+
+
+def test_list_entries_time_range(db):
+    for entered_at_ns in (1000, 2000, 3000):
+        journal.insert_entry(db, _entry(entered_at_ns))
+    since = journal.list_entries(db, 10, since_ns=2000)
+    assert [e["entered_at_ns"] for e in since] == [3000, 2000]  # inclusive
+    until = journal.list_entries(db, 10, until_ns=3000)
+    assert [e["entered_at_ns"] for e in until] == [2000, 1000]  # exclusive
+    both = journal.list_entries(db, 10, since_ns=2000, until_ns=3000)
+    assert [e["entered_at_ns"] for e in both] == [2000]
+
+
+def test_list_enriched_time_range(db):
+    journal.insert_entry(db, _entry(1_500))
+    journal.insert_entry(db, _entry(2_500))
+    _seed_metrics(
+        db,
+        [
+            (1000, 1000, 1, 1, 2, 2, 0.5, 1.0, 0.0),
+            (2000, 1000, 1, 1, 2, 2, -0.5, 2.0, 0.0),
+        ],
+    )
+    rows = journal.list_enriched(db, 10, since_ns=2000)
+    assert [r["entered_at_ns"] for r in rows] == [2_500]
+    assert rows[0]["regime_ofi"] == -0.5

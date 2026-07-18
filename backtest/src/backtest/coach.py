@@ -53,6 +53,15 @@ Populate the 'disclaimer' field with exactly this text: "{DISCLAIMER}"
 """
 
 
+class AnalysisUnavailable(Exception):
+    """Raised when Claude returns no usable structured analysis.
+
+    Happens on a safety ``refusal`` or when structured parsing yields nothing.
+    The API maps this to a 502 and the CLI reports it, rather than surfacing a
+    bare ``None``.
+    """
+
+
 class BehavioralObservation(BaseModel):
     """One recurring behavioral pattern found in the journal."""
 
@@ -126,7 +135,13 @@ def analyze(
         messages=messages,
         output_format=BehavioralAnalysis,
     )
-    return response.parsed_output
+    analysis = response.parsed_output
+    if analysis is None:
+        stop_reason = getattr(response, "stop_reason", None)
+        raise AnalysisUnavailable(
+            f"the model returned no structured analysis (stop_reason={stop_reason!r})"
+        )
+    return analysis
 
 
 def _format_entry(entry: dict[str, Any]) -> str:
@@ -181,7 +196,11 @@ def main(argv: list[str] | None = None) -> None:
 
     import anthropic  # lazy: keeps the SDK out of the library import path
 
-    analysis = analyze(entries, client=anthropic.Anthropic())
+    try:
+        analysis = analyze(entries, client=anthropic.Anthropic())
+    except AnalysisUnavailable as exc:
+        print(f"analysis unavailable: {exc}")
+        return
     print(_render(analysis))
 
 
