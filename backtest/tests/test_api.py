@@ -229,6 +229,20 @@ def test_patch_journal_entry_invalid_returns_422(client):
     assert client.patch(f"/journal/{created['id']}", json={"side": "up"}).status_code == 422
 
 
+def test_patch_exit_before_stored_entry_returns_422(client):
+    created = _post_entry(client, entered_at_ns=2_000_000_000).json()  # no exit stored
+    response = client.patch(f"/journal/{created['id']}", json={"exited_at_ns": 1_000_000_000})
+    assert response.status_code == 422
+    # Nothing persisted: the entry still has no exit.
+    assert client.get(f"/journal/{created['id']}").json()["exited_at_ns"] is None
+
+
+def test_patch_entry_after_stored_exit_returns_422(client):
+    created = _post_entry(client, entered_at_ns=1_500_000_000, exited_at_ns=1_600_000_000).json()
+    response = client.patch(f"/journal/{created['id']}", json={"entered_at_ns": 1_700_000_000})
+    assert response.status_code == 422
+
+
 def test_delete_journal_entry(client):
     created = _post_entry(client).json()
     assert client.delete(f"/journal/{created['id']}").status_code == 204
