@@ -91,8 +91,10 @@ curl -X POST 'localhost:8000/journal/analyze'         # Claude behavioral analys
 ```
 
 `side` must be `long`/`short`, `size`/`entry_price`/`entered_at_ns` must be positive, and
-`exited_at_ns` (if given) must be ≥ `entered_at_ns` — invalid bodies return 422. If Claude
-declines or returns no structured analysis, `/journal/analyze` returns 502.
+`exited_at_ns` (if given) must be ≥ `entered_at_ns` — on `PATCH` that ordering is checked
+against the stored entry too, so updating just one timestamp can't leave the exit before the
+entry. Invalid bodies return 422. If Claude declines or returns no structured analysis,
+`/journal/analyze` returns 502.
 
 Run the checks the same way CI does:
 
@@ -177,3 +179,29 @@ calls were made by me — as the project progresses.
   JavaScript's safe-integer range (2^53 ≈ 9e15). Rather than change the Phase 1–2 metrics
   contract now, the Phase 4 dashboard will read them as strings/BigInt; documented in the
   `backtest.api` module docstring so it is not forgotten.
+- **Phase 0–3 hardening review before starting Phase 4** (mine): rather than build the
+  dashboard on top of whatever was already merged, I had Claude review the finished Phases 0–3
+  for correctness and form. The baseline was green (Rust + Python suites, lint, end-to-end
+  pipeline); the fixes it proposed and I accepted were:
+  - **Zero-size ticks rejected at parse** (Claude's proposal, accepted): a window whose ticks
+    all had `size == 0` gave a zero denominator, making OFI and VWAP `NaN` and poisoning the
+    SQLite write. A serde field validator now rejects `size == 0` when the tape is parsed
+    (with row context), so `MetricsBucket::ofi`'s "denominator is never zero" is actually true.
+    The synthetic generator never emits 0, so this only ever bit hand-crafted tapes — a latent
+    hole, closed at the boundary rather than checked per metric.
+  - **`PATCH` time-ordering checked against the stored row** (Claude's proposal, accepted):
+    the API-boundary validator only caught `exited_at_ns < entered_at_ns` when both fields
+    arrived together, so a partial update of just one timestamp could persist an exit before its
+    entry. `journal.update_entry` now merges the update with the stored row before writing and
+    raises `InvalidEntryUpdate`; the endpoint maps it to **422** — one status code for one
+    domain rule (409 was considered and rejected for that reason) — keeping the pydantic
+    both-fields check as a fast path.
+  - **Journal INSERT shared, `created_at_ns` stamped per row** (Claude's proposal, accepted):
+    `insert_entry` and `import_csv` now build the INSERT from one `_INSERT_SQL` constant, and the
+    bulk import stamps each row at its own insertion time instead of sharing one batch timestamp,
+    matching the single-insert path. Form only; behavior otherwise unchanged.
+  - **`anthropic` capped below the next major** (mine): `>=0.117,<1`, because the coach rides
+    recent SDK surface (`messages.parse(output_format=...)`, `parsed_output`, adaptive thinking)
+    that a 1.0 could break; `fastapi`/`uvicorn` stay lower-bounded so CI keeps exercising latest.
+    A full `uv.lock` was considered and deferred (it would mean migrating CI off pip); the stale
+    `uv.lock` entry in `.gitattributes`, for a tool the project doesn't use, was removed.
