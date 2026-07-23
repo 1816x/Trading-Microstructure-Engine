@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "backtest"
-version = "0.0.1"
+version = "0.1.0"
 description = "Backtesting, aggregation and API layer on top of the microstructure engine metrics"
 requires-python = ">=3.11"
 dependencies = [
