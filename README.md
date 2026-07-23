@@ -37,13 +37,13 @@ Early scaffolding. Roadmap:
 - [x] Phase 1 — Vertical slice: sample tick CSV → order-flow imbalance → SQLite → API endpoint.
 - [x] Phase 2 — More metrics (realized volatility, volume, VWAP), tests against known data.
 - [x] Phase 3 — Trade journal model + Claude API behavioral agent.
-- [ ] Phase 4 — Next.js dashboard.
+- [x] Phase 4 — Next.js dashboard.
 - [ ] Phase 5 — v0.1.0 release with sample-data demo.
 
 ## Running locally
 
-Requires Rust (stable) and Python ≥ 3.11. All bundled data is synthetic — never real
-trades or amounts.
+Requires Rust (stable), Python ≥ 3.11 and Node ≥ 22 (for the dashboard). All bundled
+data is synthetic — never real trades or amounts.
 
 ```bash
 # 1. (Optional) regenerate the sample tape — deterministic, seeded
@@ -96,11 +96,21 @@ against the stored entry too, so updating just one timestamp can't leave the exi
 entry. Invalid bodies return 422. If Claude declines or returns no structured analysis,
 `/journal/analyze` returns 502.
 
+Phase 4 puts a dashboard on top: metric charts (order-flow imbalance, realized
+volatility, volume, VWAP) and the journal + behavioral-analysis view.
+
+```bash
+# 8. Dashboard (Next.js) — proxies /api/backend/* to the API from step 3
+cd dashboard && npm install && npm run dev
+# open http://localhost:3000 — set BACKEND_URL if the API is not on localhost:8000
+```
+
 Run the checks the same way CI does:
 
 ```bash
 cd engine && cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test
 cd backtest && ruff check . && ruff format --check . && pytest
+cd dashboard && npm run lint && npm run typecheck && npm test && npm run build
 ```
 
 Verify the whole Phase 1–3 pipeline end to end (tape → engine → metrics → journal → regime
@@ -205,3 +215,27 @@ calls were made by me — as the project progresses.
     that a 1.0 could break; `fastapi`/`uvicorn` stay lower-bounded so CI keeps exercising latest.
     A full `uv.lock` was considered and deferred (it would mean migrating CI off pip); the stale
     `uv.lock` entry in `.gitattributes`, for a tool the project doesn't use, was removed.
+- **Recharts for the dashboard charts** (Phase 4, mine): chosen over TradingView's
+  `lightweight-charts` (canvas, candlestick-first, imperative) and visx (lower-level than this
+  needs). The bucketed metrics are at most a few thousand SVG points, and declarative React
+  components keep the four charts maintainable. One rule shaped them: **no dual axes** — VWAP
+  (a price) gets its own frame instead of riding a second y-scale on the volume chart, and the
+  buy↔sell diverging pair was machine-validated for CVD separation and contrast against the
+  dark surface.
+- **Same-origin proxy instead of CORS** (Phase 4, Claude's proposal, accepted): the dashboard
+  rewrites `/api/backend/*` to the backend (`BACKEND_URL`, default `localhost:8000`), so the
+  browser never makes a cross-origin request and the FastAPI layer ships exactly as Phase 1–3
+  left it — no middleware, no origin allowlist to maintain.
+- **`*_ns` timestamps as BigInt end-to-end** (Phase 4, Claude's proposal, accepted): response
+  bodies are parsed with the ES2025 reviver source access (`context.source`) so `*_ns` integers
+  materialize as exact `BigInt`s, and request bodies serialize them back as unquoted integers
+  via `JSON.rawJSON` — the pydantic models expect `int`, so quoting them as strings was not an
+  option. Nanoseconds are truncated to milliseconds only for chart axes. This closes the
+  Phase 3 note that deferred the > 2^53 JSON-integer problem to the dashboard; the parser fails
+  loudly on runtimes without source access (Node ≥ 22, evergreen browsers) rather than silently
+  rounding.
+- **Journal UI scope: read + create + analyze** (Phase 4, mine): the dashboard lists entries
+  with their regime join, logs new trades (client-side mirror of the `exited_at_ns ≥
+  entered_at_ns` rule, server 422 details surfaced verbatim) and triggers the behavioral agent
+  behind an explicit button — one Claude call per click, with the 503 no-key and 502 no-analysis
+  states told apart. `PATCH`/`DELETE` stay API-only until the journal view earns editing.

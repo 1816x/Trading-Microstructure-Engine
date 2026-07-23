@@ -1,36 +1,46 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# dashboard/
 
-## Getting Started
+Next.js (App Router, TypeScript, Tailwind) visualization layer over the
+`backtest/` API — Phase 4 of the project plan.
 
-First, run the development server:
+- **Metrics** (`/`): stat tiles for the latest window plus charts for order-flow
+  imbalance (diverging bars), realized volatility, buy/sell volume and VWAP.
+- **Journal** (`/journal`): trades joined to the market regime at entry, a
+  log-a-trade form, and the Claude behavioral-analysis panel.
+
+## Running it
+
+Requires Node ≥ 22. The dashboard talks to the FastAPI backend, so start that
+first (see the repo root README: engine → `metrics.db` → `uvicorn
+backtest.api:app`).
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+npm run dev        # http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Requests to `/api/backend/*` are rewritten server-side to the backend —
+`BACKEND_URL` overrides the default `http://localhost:8000`. The backend needs
+no CORS configuration because the browser only ever sees this app's origin.
+`ANTHROPIC_API_KEY` is only needed by the *backend*, and only for the
+journal's Analyze button; everything else works without it.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Nanosecond timestamps
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+The API serializes every `*_ns` field as a JSON integer, and those epochs
+(~1.76e18) exceed `Number.MAX_SAFE_INTEGER`. `src/lib/nsjson.ts` therefore
+parses response bodies with the ES2025 reviver source access (`context.source`)
+and materializes `*_ns` fields as `BigInt`, and serializes them back as
+unquoted integers via `JSON.rawJSON`. Timestamps are truncated to milliseconds
+(`nsToMs`) only for chart axes, where float precision is enough.
 
-## Learn More
+## Checks
 
-To learn more about Next.js, take a look at the following resources:
+Same gate CI runs:
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```bash
+npm run lint
+npm run typecheck
+npm test           # Vitest + Testing Library
+npm run build
+```
