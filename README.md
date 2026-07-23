@@ -31,14 +31,40 @@ data-feed → [Rust: microstructure engine] → metrics (order-flow imbalance, r
 
 ## Status
 
-Early scaffolding. Roadmap:
+**v0.1.0** — the full vertical slice runs end to end, demo-able with one command.
+Roadmap:
 
 - [x] Phase 0 — Scaffolding: monorepo layout, linters, CI.
 - [x] Phase 1 — Vertical slice: sample tick CSV → order-flow imbalance → SQLite → API endpoint.
 - [x] Phase 2 — More metrics (realized volatility, volume, VWAP), tests against known data.
 - [x] Phase 3 — Trade journal model + Claude API behavioral agent.
 - [x] Phase 4 — Next.js dashboard.
-- [ ] Phase 5 — v0.1.0 release with sample-data demo.
+- [x] Phase 5 — v0.1.0 release with sample-data demo.
+
+See [CHANGELOG.md](CHANGELOG.md) for what each release delivered.
+
+## Quick start
+
+Requires Rust (stable), Python ≥ 3.11 and Node ≥ 22. One command builds the engine,
+computes the metrics over the bundled synthetic tape, seeds the trade journal and
+serves both the API and the dashboard until Ctrl-C:
+
+```bash
+make demo        # or: bash scripts/demo.sh
+```
+
+Open http://localhost:3000 — the four microstructure charts:
+
+![Metrics view: order-flow imbalance, realized volatility, volume and VWAP charts over the sample tape](docs/images/dashboard-metrics.png)
+
+…and the trade journal, every entry joined to the market regime at its entry time,
+with the Claude behavioral-analysis panel (that one call needs `ANTHROPIC_API_KEY`;
+everything else works without it):
+
+![Journal view: trades joined to their regime, the log-a-trade form and the behavioral-analysis panel](docs/images/dashboard-journal.png)
+
+`make help` lists the rest of the shortcuts (`setup`, `verify`, `build`, `test`,
+`lint`, `clean`); the sections below run each layer by hand.
 
 ## Running locally
 
@@ -105,7 +131,7 @@ cd dashboard && npm install && npm run dev
 # open http://localhost:3000 — set BACKEND_URL if the API is not on localhost:8000
 ```
 
-Run the checks the same way CI does:
+Run the checks the same way CI does (`make lint` and `make test` wrap them):
 
 ```bash
 cd engine && cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test
@@ -117,7 +143,7 @@ Verify the whole Phase 1–3 pipeline end to end (tape → engine → metrics �
 join; no API key needed):
 
 ```bash
-bash scripts/verify_pipeline.sh
+bash scripts/verify_pipeline.sh    # or: make verify
 ```
 
 ## Design decisions
@@ -239,3 +265,23 @@ calls were made by me — as the project progresses.
   entered_at_ns` rule, server 422 details surfaced verbatim) and triggers the behavioral agent
   behind an explicit button — one Claude call per click, with the 503 no-key and 502 no-analysis
   states told apart. `PATCH`/`DELETE` stay API-only until the journal view earns editing.
+- **One-command demo as plain bash, not docker-compose** (Phase 5, Claude's proposal,
+  accepted): `scripts/demo.sh` boots the stack in dependency order (tape → engine →
+  metrics DB → journal seed → API :8000 → dashboard :3000) with readiness polls, a port
+  pre-flight and a cleanup trap that tears both servers down on Ctrl-C — and drops
+  `next dev`'s generated-type scratch, which a mid-write kill can leave half-written
+  where `tsc` would trip over it. It reuses the
+  toolchain the project already requires; containerizing a three-language dev stack would
+  add a dependency without demoing anything better. Choices inside it: the dashboard runs
+  `next dev` (no build wait, identical charts); `METRICS_DB` is recreated on every run so
+  re-runs stay deterministic instead of duplicating journal seeds; `.venv`/`node_modules`
+  install only when missing, so the second boot takes seconds.
+- **Screenshots captured from the running demo, committed to the repo** (Phase 5,
+  Claude's proposal, accepted): the README opens with `docs/images/dashboard-*.png`,
+  taken from this demo over the sample tape — a dashboard the README only describes is
+  one the reader takes on faith. ~600 KB of PNG in-repo is the accepted cost.
+- **Root Makefile as an index, not a build system** (Phase 5, Claude's proposal,
+  accepted): the targets (`setup`/`demo`/`verify`/`build`/`test`/`lint`/`clean`) only
+  wrap the long per-component commands already documented in this README; CI keeps
+  invoking the underlying commands directly, so the Makefile cannot drift from what CI
+  actually runs.
