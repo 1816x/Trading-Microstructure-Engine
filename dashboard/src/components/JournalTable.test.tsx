@@ -53,7 +53,8 @@ describe("JournalTable", () => {
     expect(screen.getByText("+0.420")).toBeInTheDocument();
     expect(screen.getByText("0.000123")).toBeInTheDocument();
     expect(screen.getByText("21,401.25")).toBeInTheDocument();
-    expect(screen.getByText("2025-10-09 08:53:50 UTC")).toBeInTheDocument();
+    // The (UTC) qualifier lives in the column header, not each cell.
+    expect(screen.getByText("2025-10-09 08:53:50")).toBeInTheDocument();
   });
 
   it("dashes out regime columns when no bucket covers the entry", () => {

@@ -53,7 +53,7 @@ export function VolatilityChart({ rows }: { rows: VolatilityRow[] }) {
             tick={AXIS_TICK}
             axisLine={false}
             tickLine={false}
-            width={56}
+            width={72}
           />
           <Tooltip
             cursor={{ stroke: "var(--baseline)" }}

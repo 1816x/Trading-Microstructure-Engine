@@ -4,6 +4,12 @@ import { formatNs } from "@/lib/nsjson";
 
 const DASH = "—";
 
+/** The column header already says (UTC); repeating it per row costs width the
+ * regime columns need. */
+function enteredCell(ns: bigint): string {
+  return formatNs(ns).replace(" UTC", "");
+}
+
 function SideBadge({ side }: { side: JournalEntry["side"] }) {
   return (
     <span className="inline-flex items-center gap-1.5">
@@ -52,7 +58,7 @@ export function JournalTable({ entries }: { entries: JournalEntry[] }) {
         <tbody className="tabular-nums">
           {entries.map((entry) => (
             <tr key={entry.id} className="border-b border-hairline/50">
-              <td className="py-2 pr-4 font-mono">{formatNs(entry.entered_at_ns)}</td>
+              <td className="py-2 pr-4 font-mono">{enteredCell(entry.entered_at_ns)}</td>
               <td className="py-2 pr-4">{entry.symbol}</td>
               <td className="py-2 pr-4">
                 <SideBadge side={entry.side} />
