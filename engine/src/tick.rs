@@ -7,6 +7,11 @@ use serde::Deserialize;
 #[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
 pub struct Tick {
     pub timestamp_ns: i64,
+    /// Trade print price. Validated positive and finite when the tape is parsed:
+    /// it feeds VWAP and the log-return realized volatility, so a zero, negative
+    /// or non-finite price would make those metrics `inf`/`NaN` and poison the
+    /// `SQLite` write — the same failure mode a zero `size` causes for OFI/VWAP.
+    #[serde(deserialize_with = "finite_positive_price")]
     pub price: f64,
     /// Contracts traded. Validated positive when the tape is parsed so a
     /// window's total volume is never zero (which would make OFI and VWAP
@@ -40,6 +45,26 @@ where
         return Err(serde::de::Error::custom("size must be positive, got 0"));
     }
     Ok(size)
+}
+
+/// Deserialize a tick `price`, rejecting non-positive and non-finite values.
+///
+/// The price feeds VWAP's numerator and the log return `ln(price / prev)` in
+/// [`crate::metrics::compute`]. A zero, negative or non-finite (`NaN`/`inf`)
+/// price would make realized volatility `inf`/`NaN`, which then poisons the
+/// `SQLite` write. Rejecting it at parse time — with row context from the CSV
+/// reader — keeps those metrics well-defined, mirroring [`positive_size`].
+fn finite_positive_price<'de, D>(deserializer: D) -> Result<f64, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let price = f64::deserialize(deserializer)?;
+    if !(price.is_finite() && price > 0.0) {
+        return Err(serde::de::Error::custom(format!(
+            "price must be a positive, finite number, got {price}"
+        )));
+    }
+    Ok(price)
 }
 
 /// Read a tick tape from a CSV file with the header
@@ -105,5 +130,28 @@ mod tests {
     fn rejects_negative_size() {
         let csv = "timestamp_ns,price,size,aggressor\n1000,21400.00,-1,B\n";
         assert!(read_from(csv.as_bytes()).is_err());
+    }
+
+    #[test]
+    fn rejects_zero_price() {
+        let csv = "timestamp_ns,price,size,aggressor\n\
+                   1000,0,3,B\n";
+        let err = read_from(csv.as_bytes()).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("price must be a positive, finite number"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn rejects_negative_price() {
+        let csv = "timestamp_ns,price,size,aggressor\n1000,-21400.00,3,B\n";
+        let err = read_from(csv.as_bytes()).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("price must be a positive, finite number"),
+            "unexpected error: {err}"
+        );
     }
 }

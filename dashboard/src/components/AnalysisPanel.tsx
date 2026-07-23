@@ -8,8 +8,8 @@ import { analyzeJournal, ApiError, type BehavioralAnalysis, type Severity } from
  * the dot is the icon, so severity never rides on color alone. */
 const SEVERITY_DOT: Record<Severity, string> = {
   low: "var(--muted)",
-  medium: "#fab219",
-  high: "#ec835a",
+  medium: "var(--severity-medium)",
+  high: "var(--severity-high)",
 };
 
 function SeverityBadge({ severity }: { severity: Severity }) {

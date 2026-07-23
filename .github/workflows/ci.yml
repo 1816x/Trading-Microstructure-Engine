@@ -58,3 +58,20 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+
+  integration:
+    name: integration (pipeline)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: engine
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      # End-to-end smoke test of the cross-language pipeline (tape -> Rust engine
+      # -> metrics DB -> journal seed -> regime join). No Anthropic key needed;
+      # guards the `make demo`/`make verify` path that the per-stack jobs miss.
+      - run: bash scripts/verify_pipeline.sh

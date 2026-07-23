@@ -28,7 +28,6 @@ import {
  * measures of different scale never share one chart (no dual axes). */
 export function VwapChart({ rows }: { rows: VolumeRow[] }) {
   const data = rows
-    .filter((row) => row.vwap !== null)
     .map((row) => ({ t: nsToMs(row.bucket_start_ns), vwap: row.vwap }))
     .reverse();
 
