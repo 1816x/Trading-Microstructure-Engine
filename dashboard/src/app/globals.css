@@ -18,6 +18,9 @@
   --series-buy: #3987e5;
   --series-sell: #e66767;
   --series-1: #3987e5;
+  /* Severity dots for the behavioral-analysis panel (low reuses --muted). */
+  --severity-medium: #fab219;
+  --severity-high: #ec835a;
 }
 
 @theme inline {

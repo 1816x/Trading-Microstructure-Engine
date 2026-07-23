@@ -88,7 +88,9 @@ export default function MetricsPage() {
           error={firstError}
           hint={firstError.status === 503 ? ENGINE_HINT : undefined}
         />
-      ) : ofi.data?.length === 0 && volume.data?.length === 0 ? (
+      ) : ofi.data?.length === 0 &&
+        volatility.data?.length === 0 &&
+        volume.data?.length === 0 ? (
         <EmptyState title="No metric buckets yet" body={ENGINE_HINT} />
       ) : (
         <>
