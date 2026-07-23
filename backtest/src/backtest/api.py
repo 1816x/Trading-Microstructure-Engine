@@ -179,8 +179,15 @@ def get_journal_entry(entry_id: int) -> dict[str, Any]:
 
 @app.patch("/journal/{entry_id}")
 def patch_journal_entry(entry_id: int, patch: JournalEntryPatch) -> dict[str, Any]:
-    """Apply a partial update to a journal entry, returning the updated row."""
-    updated = journal.update_entry(_db_path(), entry_id, patch.model_dump(exclude_unset=True))
+    """Apply a partial update to a journal entry, returning the updated row.
+
+    Returns 422 when the update would put the exit before the entry once applied
+    to the stored row (checked even if only one timestamp is in the body).
+    """
+    try:
+        updated = journal.update_entry(_db_path(), entry_id, patch.model_dump(exclude_unset=True))
+    except journal.InvalidEntryUpdate as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     if updated is None:
         raise HTTPException(status_code=404, detail=f"journal entry {entry_id} not found")
     return updated

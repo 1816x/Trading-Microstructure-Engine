@@ -24,8 +24,9 @@ pub struct MetricsBucket {
 impl MetricsBucket {
     /// Order-flow imbalance: `(buy − sell) / (buy + sell)`, in `[-1, 1]`.
     ///
-    /// Buckets only exist when at least one tick landed in them, so the
-    /// denominator is never zero.
+    /// Buckets only exist when at least one tick landed in them, and tick sizes
+    /// are validated positive when the tape is parsed (`tick::read_csv`), so the
+    /// total volume — and thus the denominator — is never zero.
     #[must_use]
     pub fn ofi(&self) -> f64 {
         let buy = self.buy_volume as f64;

@@ -179,6 +179,34 @@ def test_update_entry_empty_is_noop(db):
     assert same["size"] == stored["size"]
 
 
+def test_update_entry_rejects_exit_before_stored_entry(db):
+    stored = journal.insert_entry(db, _entry(2000))  # entered 2000, exited 3000
+    with pytest.raises(journal.InvalidEntryUpdate):
+        journal.update_entry(db, stored["id"], {"exited_at_ns": 1500})
+    # Nothing persisted: the stored exit is unchanged.
+    assert journal.get_entry(db, stored["id"])["exited_at_ns"] == 3000
+
+
+def test_update_entry_rejects_entry_after_stored_exit(db):
+    stored = journal.insert_entry(db, _entry(1000))  # entered 1000, exited 2000
+    with pytest.raises(journal.InvalidEntryUpdate):
+        journal.update_entry(db, stored["id"], {"entered_at_ns": 2500})
+    assert journal.get_entry(db, stored["id"])["entered_at_ns"] == 1000
+
+
+def test_update_entry_moving_both_times_is_allowed(db):
+    stored = journal.insert_entry(db, _entry(1000))  # entered 1000, exited 2000
+    # 5000 is after the old exit (2000), but the merged pair is consistent.
+    updated = journal.update_entry(db, stored["id"], {"entered_at_ns": 5000, "exited_at_ns": 6000})
+    assert (updated["entered_at_ns"], updated["exited_at_ns"]) == (5000, 6000)
+
+
+def test_update_entry_clearing_exit_is_allowed(db):
+    stored = journal.insert_entry(db, _entry(1000))
+    updated = journal.update_entry(db, stored["id"], {"exited_at_ns": None})
+    assert updated["exited_at_ns"] is None
+
+
 def test_delete_entry(db):
     stored = journal.insert_entry(db, _entry(1000))
     assert journal.delete_entry(db, stored["id"]) is True

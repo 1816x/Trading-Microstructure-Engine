@@ -175,6 +175,8 @@ def _render(analysis: BehavioralAnalysis) -> str:
 
 
 def main(argv: list[str] | None = None) -> None:
+    """CLI entry point: optionally seed the journal from a CSV (``--load``), then
+    analyze it with Claude and print the rendered observations."""
     parser = argparse.ArgumentParser(description="Analyze a trade journal with Claude.")
     parser.add_argument("--db", default=os.environ.get(DB_PATH_ENV, "metrics.db"))
     parser.add_argument("--limit", type=int, default=100)

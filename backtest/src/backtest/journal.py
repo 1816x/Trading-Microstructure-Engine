@@ -74,6 +74,21 @@ LEFT JOIN metrics r ON r.rowid = (
 )
 """
 
+# INSERT for one row: the caller-supplied columns plus the managed created_at_ns.
+_INSERT_SQL = (
+    f"INSERT INTO journal_entries ({', '.join(_INPUT_COLUMNS)}, created_at_ns) "
+    f"VALUES ({', '.join(['?'] * (len(_INPUT_COLUMNS) + 1))})"
+)
+
+
+class InvalidEntryUpdate(ValueError):
+    """Raised when a partial update would leave the stored entry inconsistent.
+
+    Specifically, when the resulting ``exited_at_ns`` would fall before
+    ``entered_at_ns`` once the update is applied to the stored row. The API maps
+    this to a 422.
+    """
+
 
 def init_db(conn: sqlite3.Connection) -> None:
     """Create the ``journal_entries`` table if it does not already exist."""
@@ -104,16 +119,10 @@ def insert_entry(path: str | Path, entry: dict[str, Any]) -> dict[str, Any]:
     must be present or SQLite raises ``IntegrityError``.
     """
     values = tuple(entry.get(col) for col in _INPUT_COLUMNS)
-    created_at_ns = time.time_ns()
-    placeholders = ", ".join(["?"] * (len(_INPUT_COLUMNS) + 1))
     with sqlite3.connect(path) as conn:
         conn.row_factory = sqlite3.Row
         init_db(conn)
-        cursor = conn.execute(
-            f"INSERT INTO journal_entries ({', '.join(_INPUT_COLUMNS)}, created_at_ns) "
-            f"VALUES ({placeholders})",
-            (*values, created_at_ns),
-        )
+        cursor = conn.execute(_INSERT_SQL, (*values, time.time_ns()))
         stored = conn.execute(
             f"SELECT {', '.join(_ROW_COLUMNS)} FROM journal_entries WHERE id = ?",
             (cursor.lastrowid,),
@@ -145,6 +154,12 @@ def update_entry(path: str | Path, entry_id: int, fields: dict[str, Any]) -> dic
     Only recognised, mutable columns in ``fields`` are written; ``id`` and
     ``created_at_ns`` are never touched. Returns ``None`` if the entry does not
     exist. An empty update is a no-op that returns the current row.
+
+    The time-ordering rule (``exited_at_ns`` >= ``entered_at_ns``) is enforced
+    against the *stored* row: a partial update touching only one endpoint is
+    checked against the other as it already stands, raising
+    :class:`InvalidEntryUpdate` if the result would put the exit before the
+    entry. Nothing is written in that case.
     """
     updates = {col: value for col, value in fields.items() if col in _UPDATABLE_COLUMNS}
     if not updates:
@@ -154,15 +169,21 @@ def update_entry(path: str | Path, entry_id: int, fields: dict[str, Any]) -> dic
         return None
     assignments = ", ".join(f"{col} = ?" for col in updates)
     with sqlite3.connect(path) as conn:
+        conn.row_factory = sqlite3.Row
         try:
-            cursor = conn.execute(
-                f"UPDATE journal_entries SET {assignments} WHERE id = ?",
-                (*updates.values(), entry_id),
-            )
+            current = conn.execute(
+                "SELECT entered_at_ns, exited_at_ns FROM journal_entries WHERE id = ?",
+                (entry_id,),
+            ).fetchone()
         except sqlite3.OperationalError:
             return None
-        if cursor.rowcount == 0:
+        if current is None:
             return None
+        _check_times_ordered(updates, current)
+        conn.execute(
+            f"UPDATE journal_entries SET {assignments} WHERE id = ?",
+            (*updates.values(), entry_id),
+        )
     return get_entry(path, entry_id)
 
 
@@ -236,17 +257,11 @@ def import_csv(csv_path: str | Path, path: str | Path) -> int:
     """
     with open(csv_path, newline="") as handle:
         rows = list(csv.DictReader(handle))
-    created_at_ns = time.time_ns()
-    placeholders = ", ".join(["?"] * (len(_INPUT_COLUMNS) + 1))
-    statement = (
-        f"INSERT INTO journal_entries ({', '.join(_INPUT_COLUMNS)}, created_at_ns) "
-        f"VALUES ({placeholders})"
-    )
     with sqlite3.connect(path) as conn:
         init_db(conn)
         for row in rows:
             values = tuple(_coerce(col, row.get(col)) for col in _INPUT_COLUMNS)
-            conn.execute(statement, (*values, created_at_ns))
+            conn.execute(_INSERT_SQL, (*values, time.time_ns()))
     return len(rows)
 
 
@@ -263,6 +278,19 @@ def _build_list_query(
         params.append(until_ns)
     where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
     return f"{select}{where} ORDER BY {time_column} DESC LIMIT ?", params
+
+
+def _check_times_ordered(updates: dict[str, Any], current: sqlite3.Row) -> None:
+    """Raise :class:`InvalidEntryUpdate` if applying ``updates`` to ``current``
+    would put ``exited_at_ns`` before ``entered_at_ns``.
+
+    Each endpoint takes its updated value if present, else the stored one; the
+    check is skipped when the effective exit is ``None`` (an open position).
+    """
+    entered = updates.get("entered_at_ns", current["entered_at_ns"])
+    exited = updates.get("exited_at_ns", current["exited_at_ns"])
+    if entered is not None and exited is not None and exited < entered:
+        raise InvalidEntryUpdate("exited_at_ns must be >= entered_at_ns")
 
 
 def _read(path: str | Path, query: str, params: Sequence[Any]) -> list[dict[str, Any]]:
