@@ -1,0 +1,43 @@
+@import "tailwindcss";
+
+/* Dark-only chart chrome. The dashboard commits to a single dark look; every
+   color here is a validated token (series pair checked against --surface with
+   the dataviz palette validator), referenced by role — never raw hex in
+   components. */
+:root {
+  color-scheme: dark;
+  --page: #0d0d0d;
+  --surface: #1a1a19;
+  --ink: #ffffff;
+  --ink-2: #c3c2b7;
+  --muted: #898781;
+  --grid: #2c2c2a;
+  --baseline: #383835;
+  --hairline: rgba(255, 255, 255, 0.1);
+  /* Diverging pair (buy ↔ sell) and the single-series default. */
+  --series-buy: #3987e5;
+  --series-sell: #e66767;
+  --series-1: #3987e5;
+}
+
+@theme inline {
+  --color-page: var(--page);
+  --color-surface: var(--surface);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-muted: var(--muted);
+  --color-grid: var(--grid);
+  --color-baseline: var(--baseline);
+  --color-hairline: var(--hairline);
+  --color-buy: var(--series-buy);
+  --color-sell: var(--series-sell);
+  --color-series: var(--series-1);
+  --font-sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+
+body {
+  background: var(--page);
+  color: var(--ink);
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
