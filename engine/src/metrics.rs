@@ -87,6 +87,9 @@ pub fn compute(ticks: &[Tick], window_ns: i64) -> Vec<MetricsBucket> {
         acc.trade_count += 1;
         acc.price_size_sum += tick.price * f64::from(tick.size);
         if let Some(prev) = prev_price {
+            // Both prices are parse-validated positive and finite (see
+            // `tick::finite_positive_price`), so the ratio is positive and its
+            // log is a real, finite number — never `NaN`/`inf`.
             let log_return = (tick.price / prev).ln();
             acc.sum_sq_returns += log_return * log_return;
         }

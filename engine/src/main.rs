@@ -59,7 +59,9 @@ fn parse_window(input: &str) -> anyhow::Result<i64> {
         .parse()
         .with_context(|| format!("invalid window '{input}'"))?;
     anyhow::ensure!(value > 0, "window must be positive, got '{input}'");
-    Ok(value * unit_ns)
+    value
+        .checked_mul(unit_ns)
+        .with_context(|| format!("window '{input}' is too large"))
 }
 
 #[cfg(test)]
@@ -78,5 +80,12 @@ mod tests {
         for bad in ["1h", "0s", "-1s", "s", "abc"] {
             assert!(parse_window(bad).is_err(), "expected error for {bad}");
         }
+    }
+
+    #[test]
+    fn rejects_overflowing_window() {
+        // i64 nanoseconds overflow far below i64::MAX minutes; the multiply
+        // must be checked rather than wrap (release builds don't panic on it).
+        assert!(parse_window("9223372036854775807m").is_err());
     }
 }
